@@ -1,9 +1,7 @@
 #include "vapoursynth/VapourSynth.h"
 #include "vapoursynth/VSHelper.h"
 
-#include <immintrin.h>
 #include <algorithm>
-#include <cstdint>
 #include <vector>
 
 template <class T>
@@ -33,36 +31,32 @@ static inline T sort9_repair_c(const T &src0,
     return 0;
 }
 
-//////////////////
-/////////////////
-////////////////
 
-typedef struct {
+struct spRepairData
+{
     VSNodeRef *node;
     VSNodeRef *repairnode;
     VSNodeRef *bil_nodes[8]; // 1, 2, 3, 4, repairnode=5, 6, 7, 8, 9
     const VSVideoInfo *vi;
     int mode[3];
-    int bits_per_sample;
-} spRepairData;
+};
 
 
 static void VS_CC spRepairInit(VSMap *in, VSMap *out, void **instanceData, VSNode *node, VSCore *core, const VSAPI *vsapi)
 {
-    spRepairData *d = static_cast<spRepairData *>(*instanceData);
+    spRepairData *d = reinterpret_cast<spRepairData *>(*instanceData);
     vsapi->setVideoInfo(d->vi, 1, node);
 }
 
 
 static const VSFrameRef *VS_CC spRepairGetFrame(int n, int activationReason, void **instanceData, void **frameData, VSFrameContext *frameCtx, VSCore *core, const VSAPI *vsapi)
 {
-    spRepairData *d = static_cast<spRepairData *>(*instanceData);
+    spRepairData *d = reinterpret_cast<spRepairData *>(*instanceData);
 
     if (activationReason == arInitial)
     {
         vsapi->requestFrameFilter(n, d->node, frameCtx);
         vsapi->requestFrameFilter(n, d->repairnode, frameCtx);
-        //
         for (int i = 0; i < 8; ++i)
         {
             vsapi->requestFrameFilter(n, d->bil_nodes[i], frameCtx);
@@ -89,7 +83,7 @@ static const VSFrameRef *VS_CC spRepairGetFrame(int n, int activationReason, voi
         };
         VSFrameRef *dst_frame = vsapi->newVideoFrame2(vsapi->getFrameFormat(src_frame), vsapi->getFrameWidth(src_frame, 0), vsapi->getFrameHeight(src_frame, 0), cp_planes, planes, src_frame, core);
 
-        if (d->bits_per_sample == 8)
+        if (d->vi->format->sampleType == stInteger && d->vi->format->bytesPerSample == 1)
         {
             // uint8_t
             for (int plane = 0; plane < d->vi->format->numPlanes; ++plane)
@@ -122,7 +116,7 @@ static const VSFrameRef *VS_CC spRepairGetFrame(int n, int activationReason, voi
                 }
             }
         }
-        else if (d->bits_per_sample == 16)
+        else if (d->vi->format->sampleType == stInteger && d->vi->format->bytesPerSample == 2)
         {
             // uint16_t
             for (int plane = 0; plane < d->vi->format->numPlanes; ++plane)
@@ -155,7 +149,7 @@ static const VSFrameRef *VS_CC spRepairGetFrame(int n, int activationReason, voi
                 }
             }
         }
-        else if (d->bits_per_sample == 32)
+        else if (d->vi->format->sampleType == stFloat && d->vi->format->bytesPerSample == 4)
         {
             // float
             for (int plane = 0; plane < d->vi->format->numPlanes; ++plane)
@@ -188,6 +182,12 @@ static const VSFrameRef *VS_CC spRepairGetFrame(int n, int activationReason, voi
                 }
             }
         }
+        else
+        {
+            vsapi->setFilterError("spRepair: Input format is not supported.", frameCtx);
+            vsapi->freeFrame(dst_frame);
+            dst_frame = nullptr;
+        }
         vsapi->freeFrame(src_frame);
         vsapi->freeFrame(rep0_frame);
         vsapi->freeFrame(rep1_frame);
@@ -204,8 +204,9 @@ static const VSFrameRef *VS_CC spRepairGetFrame(int n, int activationReason, voi
 }
 
 
-static void VS_CC spRepairFree(void *instanceData, VSCore *core, const VSAPI *vsapi) {
-    spRepairData *d = static_cast<spRepairData *>(instanceData);
+static void VS_CC spRepairFree(void *instanceData, VSCore *core, const VSAPI *vsapi)
+{
+    spRepairData *d = reinterpret_cast<spRepairData *>(instanceData);
     vsapi->freeNode(d->node);
     vsapi->freeNode(d->repairnode);
     for (int i = 0; i < 8; ++i)
@@ -241,25 +242,6 @@ void VS_CC spRepairCreate(const VSMap *in, VSMap *out, void *userData, VSCore *c
     {
         vsapi->freeNode(d.node);
         vsapi->setError(out, "spRepair: Only constant format input is supported.");
-        return;
-    }
-
-    if (d.vi->format->sampleType == stFloat && d.vi->format->bitsPerSample == 32)
-    {
-        d.bits_per_sample = 32;
-    }
-    else if (d.vi->format->sampleType == stInteger && d.vi->format->bytesPerSample == 1)
-    {
-        d.bits_per_sample = 8;
-    }
-    else if (d.vi->format->sampleType == stInteger && d.vi->format->bytesPerSample == 2)
-    {
-        d.bits_per_sample = 16;
-    }
-    else
-    {
-        vsapi->freeNode(d.node);
-        vsapi->setError(out, "spRepair: Only float or 8-16 bit integer format are supported.");
         return;
     }
 
@@ -367,7 +349,7 @@ void VS_CC spRepairCreate(const VSMap *in, VSMap *out, void *userData, VSCore *c
 
 VS_EXTERNAL_API(void) VapourSynthPluginInit(VSConfigPlugin configFunc, VSRegisterFunction registerFunc, VSPlugin *plugin)
 {
-    configFunc("Yomiko.collection.sprepair", "sprep", "Sub-pixel repair", VAPOURSYNTH_API_VERSION, 1, plugin);
+    configFunc("yomiko.collection.sprepair", "sprep", "Sub-pixel repair", VAPOURSYNTH_API_VERSION, 1, plugin);
 
     registerFunc("spRepair",
         "clip:clip;"

@@ -3,7 +3,6 @@
 
 #include <immintrin.h>
 #include <algorithm>
-#include <cstdint>
 #include <utility>
 
 /* 
@@ -75,6 +74,12 @@ inline void storeu(float *dst, __m256 value)
 }
 
 
+#define DO_LOADU \
+    loadu(src0), loadu(src1), loadu(src2), \
+    loadu(src3), loadu(src4), loadu(src5), \
+    loadu(src6), loadu(src7), loadu(src8),
+
+
 template <int order>
 inline std::pair<__m256i, __m256i> sort9_minmax_u8(const uint8_t *src0,
     const uint8_t *src1, const uint8_t *src2, const uint8_t *src3,
@@ -82,9 +87,7 @@ inline std::pair<__m256i, __m256i> sort9_minmax_u8(const uint8_t *src0,
     const uint8_t *src7, const uint8_t *src8)
 {
     __m256i val[9] = {
-        loadu(src0), loadu(src1), loadu(src2),
-        loadu(src3), loadu(src4), loadu(src5),
-        loadu(src6), loadu(src7), loadu(src8),
+DO_LOADU
     };
 
 #define SWAP swap_u8
@@ -115,9 +118,7 @@ inline std::pair<__m256i, __m256i> sort9_minmax_u16(const uint16_t *src0,
     const uint16_t *src7, const uint16_t *src8)
 {
     __m256i val[9] = {
-        loadu(src0), loadu(src1), loadu(src2),
-        loadu(src3), loadu(src4), loadu(src5),
-        loadu(src6), loadu(src7), loadu(src8),
+DO_LOADU
     };
 
 #define SWAP swap_u16
@@ -148,9 +149,7 @@ inline std::pair<__m256, __m256> sort9_minmax_f(const float *src0,
     const float *src7, const float *src8)
 {
     __m256 val[9] = {
-        loadu(src0), loadu(src1), loadu(src2),
-        loadu(src3), loadu(src4), loadu(src5),
-        loadu(src6), loadu(src7), loadu(src8),
+DO_LOADU
     };
 
 #define SWAP swap_f
@@ -236,8 +235,7 @@ static void sort9_repair_u8(const uint8_t *src0,
 {
     if (mode == 0)
     {
-        //storeu(dst, loadu(srca));
-        //std::copy_n(srca, 32, dst);
+        // pass
     }
     else if (mode == 1)
     {
@@ -298,8 +296,7 @@ static void sort9_repair_u16(const uint16_t *src0,
 {
     if (mode == 0)
     {
-        //storeu(dst, loadu(srca));
-        //std::copy_n(srca, 16, dst);
+        // pass
     }
     else if (mode == 1)
     {
@@ -360,8 +357,7 @@ static void sort9_repair_f(const float *src0,
 {
     if (mode == 0)
     {
-        //storeu(dst, loadu(srca));
-        //std::copy_n(srca, 8, dst);
+        // pass
     }
     else if (mode == 1)
     {
@@ -413,36 +409,32 @@ static void sort9_repair_f(const float *src0,
     }
 }
 
-//////////////////
-/////////////////
-////////////////
 
-typedef struct {
+struct spRepairData
+{
     VSNodeRef *node;
     VSNodeRef *repairnode;
     VSNodeRef *bil_nodes[8]; // 1, 2, 3, 4, repairnode=5, 6, 7, 8, 9
     const VSVideoInfo *vi;
     int mode[3];
-    int bits_per_sample;
-} spRepairData;
+};
 
 
 static void VS_CC spRepairInit(VSMap *in, VSMap *out, void **instanceData, VSNode *node, VSCore *core, const VSAPI *vsapi)
 {
-    spRepairData *d = static_cast<spRepairData *>(*instanceData);
+    spRepairData *d = reinterpret_cast<spRepairData *>(*instanceData);
     vsapi->setVideoInfo(d->vi, 1, node);
 }
 
 
 static const VSFrameRef *VS_CC spRepairGetFrame(int n, int activationReason, void **instanceData, void **frameData, VSFrameContext *frameCtx, VSCore *core, const VSAPI *vsapi)
 {
-    spRepairData *d = static_cast<spRepairData *>(*instanceData);
+    spRepairData *d = reinterpret_cast<spRepairData *>(*instanceData);
 
     if (activationReason == arInitial)
     {
         vsapi->requestFrameFilter(n, d->node, frameCtx);
         vsapi->requestFrameFilter(n, d->repairnode, frameCtx);
-        //
         for (int i = 0; i < 8; ++i)
         {
             vsapi->requestFrameFilter(n, d->bil_nodes[i], frameCtx);
@@ -469,7 +461,7 @@ static const VSFrameRef *VS_CC spRepairGetFrame(int n, int activationReason, voi
         };
         VSFrameRef *dst_frame = vsapi->newVideoFrame2(vsapi->getFrameFormat(src_frame), vsapi->getFrameWidth(src_frame, 0), vsapi->getFrameHeight(src_frame, 0), cp_planes, planes, src_frame, core);
 
-        if (d->bits_per_sample == 8)
+        if (d->vi->format->sampleType == stInteger && d->vi->format->bytesPerSample == 1)
         {
             // uint8_t
             for (int plane = 0; plane < d->vi->format->numPlanes; ++plane)
@@ -500,7 +492,7 @@ static const VSFrameRef *VS_CC spRepairGetFrame(int n, int activationReason, voi
                 }
             }
         }
-        else if (d->bits_per_sample == 16)
+        else if (d->vi->format->sampleType == stInteger && d->vi->format->bytesPerSample == 2)
         {
             // uint16_t
             for (int plane = 0; plane < d->vi->format->numPlanes; ++plane)
@@ -531,7 +523,7 @@ static const VSFrameRef *VS_CC spRepairGetFrame(int n, int activationReason, voi
                 }
             }
         }
-        else if (d->bits_per_sample == 32)
+        else if (d->vi->format->sampleType == stFloat && d->vi->format->bytesPerSample == 4)
         {
             // float
             for (int plane = 0; plane < d->vi->format->numPlanes; ++plane)
@@ -562,6 +554,12 @@ static const VSFrameRef *VS_CC spRepairGetFrame(int n, int activationReason, voi
                 }
             }
         }
+        else
+        {
+            vsapi->setFilterError("spRepair: Input format is not supported.", frameCtx);
+            vsapi->freeFrame(dst_frame);
+            dst_frame = nullptr;
+        }
         vsapi->freeFrame(src_frame);
         vsapi->freeFrame(rep0_frame);
         vsapi->freeFrame(rep1_frame);
@@ -578,8 +576,9 @@ static const VSFrameRef *VS_CC spRepairGetFrame(int n, int activationReason, voi
 }
 
 
-static void VS_CC spRepairFree(void *instanceData, VSCore *core, const VSAPI *vsapi) {
-    spRepairData *d = static_cast<spRepairData *>(instanceData);
+static void VS_CC spRepairFree(void *instanceData, VSCore *core, const VSAPI *vsapi)
+{
+    spRepairData *d = reinterpret_cast<spRepairData *>(instanceData);
     vsapi->freeNode(d->node);
     vsapi->freeNode(d->repairnode);
     for (int i = 0; i < 8; ++i)
@@ -610,32 +609,6 @@ void VS_CC spRepairCreate(const VSMap *in, VSMap *out, void *userData, VSCore *c
 
     d.node = vsapi->propGetNode(in, "clip", 0, nullptr);
     d.vi = vsapi->getVideoInfo(d.node);
-
-    if (!isConstantFormat(d.vi))
-    {
-        vsapi->freeNode(d.node);
-        vsapi->setError(out, "spRepair: Only constant format input is supported.");
-        return;
-    }
-
-    if (d.vi->format->sampleType == stFloat && d.vi->format->bitsPerSample == 32)
-    {
-        d.bits_per_sample = 32;
-    }
-    else if (d.vi->format->sampleType == stInteger && d.vi->format->bytesPerSample == 1)
-    {
-        d.bits_per_sample = 8;
-    }
-    else if (d.vi->format->sampleType == stInteger && d.vi->format->bytesPerSample == 2)
-    {
-        d.bits_per_sample = 16;
-    }
-    else
-    {
-        vsapi->freeNode(d.node);
-        vsapi->setError(out, "spRepair: Only float or 8-16 bit integer format are supported.");
-        return;
-    }
 
     d.repairnode = vsapi->propGetNode(in, "repairclip", 0, nullptr);
 
@@ -741,7 +714,7 @@ void VS_CC spRepairCreate(const VSMap *in, VSMap *out, void *userData, VSCore *c
 
 VS_EXTERNAL_API(void) VapourSynthPluginInit(VSConfigPlugin configFunc, VSRegisterFunction registerFunc, VSPlugin *plugin)
 {
-    configFunc("Yomiko.collection.sprepair", "sprep", "Sub-pixel repair", VAPOURSYNTH_API_VERSION, 1, plugin);
+    configFunc("yomiko.collection.sprepair", "sprep", "Sub-pixel repair", VAPOURSYNTH_API_VERSION, 1, plugin);
 
     registerFunc("spRepair",
         "clip:clip;"
