@@ -1,9 +1,11 @@
-#include "vapoursynth/VapourSynth.h"
-#include "vapoursynth/VSHelper.h"
+#include "vapoursynth/VapourSynth4.h"
+#include "vapoursynth/VSHelper4.h"
 
 #include <immintrin.h>
 #include <algorithm>
 #include <utility>
+#include <memory>
+#include <vector>
 
 /* 
  * Ref for the sorting network used: Vinod K Valsalam and Risto Miikkulainen,
@@ -412,24 +414,17 @@ static void sort9_repair_f(const float *src0,
 
 struct spRepairData
 {
-    VSNodeRef *node;
-    VSNodeRef *repairnode;
-    VSNodeRef *bil_nodes[8]; // 1, 2, 3, 4, repairnode=5, 6, 7, 8, 9
-    const VSVideoInfo *vi;
+    VSNode *node;
+    VSNode *repairnode;
+    VSNode *bil_nodes[8]; // 1, 2, 3, 4, repairnode=5, 6, 7, 8, 9
+    VSVideoInfo vi;
     int mode[3];
 };
 
 
-static void VS_CC spRepairInit(VSMap *in, VSMap *out, void **instanceData, VSNode *node, VSCore *core, const VSAPI *vsapi)
+static const VSFrame *VS_CC spRepairGetFrame(int n, int activationReason, void *instanceData, void **frameData, VSFrameContext *frameCtx, VSCore *core, const VSAPI *vsapi)
 {
-    spRepairData *d = reinterpret_cast<spRepairData *>(*instanceData);
-    vsapi->setVideoInfo(d->vi, 1, node);
-}
-
-
-static const VSFrameRef *VS_CC spRepairGetFrame(int n, int activationReason, void **instanceData, void **frameData, VSFrameContext *frameCtx, VSCore *core, const VSAPI *vsapi)
-{
-    spRepairData *d = reinterpret_cast<spRepairData *>(*instanceData);
+    spRepairData *d = reinterpret_cast<spRepairData *>(instanceData);
 
     if (activationReason == arInitial)
     {
@@ -442,29 +437,29 @@ static const VSFrameRef *VS_CC spRepairGetFrame(int n, int activationReason, voi
     }
     else if (activationReason == arAllFramesReady)
     {
-        const VSFrameRef *src_frame = vsapi->getFrameFilter(n, d->node, frameCtx);
-        const VSFrameRef *rep4_frame = vsapi->getFrameFilter(n, d->repairnode, frameCtx);
-        const VSFrameRef *rep0_frame = vsapi->getFrameFilter(n, d->bil_nodes[0], frameCtx);
-        const VSFrameRef *rep1_frame = vsapi->getFrameFilter(n, d->bil_nodes[1], frameCtx);
-        const VSFrameRef *rep2_frame = vsapi->getFrameFilter(n, d->bil_nodes[2], frameCtx);
-        const VSFrameRef *rep3_frame = vsapi->getFrameFilter(n, d->bil_nodes[3], frameCtx);
-        const VSFrameRef *rep5_frame = vsapi->getFrameFilter(n, d->bil_nodes[4], frameCtx);
-        const VSFrameRef *rep6_frame = vsapi->getFrameFilter(n, d->bil_nodes[5], frameCtx);
-        const VSFrameRef *rep7_frame = vsapi->getFrameFilter(n, d->bil_nodes[6], frameCtx);
-        const VSFrameRef *rep8_frame = vsapi->getFrameFilter(n, d->bil_nodes[7], frameCtx);
+        const VSFrame *src_frame = vsapi->getFrameFilter(n, d->node, frameCtx);
+        const VSFrame *rep4_frame = vsapi->getFrameFilter(n, d->repairnode, frameCtx);
+        const VSFrame *rep0_frame = vsapi->getFrameFilter(n, d->bil_nodes[0], frameCtx);
+        const VSFrame *rep1_frame = vsapi->getFrameFilter(n, d->bil_nodes[1], frameCtx);
+        const VSFrame *rep2_frame = vsapi->getFrameFilter(n, d->bil_nodes[2], frameCtx);
+        const VSFrame *rep3_frame = vsapi->getFrameFilter(n, d->bil_nodes[3], frameCtx);
+        const VSFrame *rep5_frame = vsapi->getFrameFilter(n, d->bil_nodes[4], frameCtx);
+        const VSFrame *rep6_frame = vsapi->getFrameFilter(n, d->bil_nodes[5], frameCtx);
+        const VSFrame *rep7_frame = vsapi->getFrameFilter(n, d->bil_nodes[6], frameCtx);
+        const VSFrame *rep8_frame = vsapi->getFrameFilter(n, d->bil_nodes[7], frameCtx);
 
         int planes[3] = {0, 1, 2};
-        const VSFrameRef *cp_planes[3] = {
+        const VSFrame *cp_planes[3] = {
             d->mode[0] > 0 ? nullptr : src_frame,
             d->mode[1] > 0 ? nullptr : src_frame,
             d->mode[2] > 0 ? nullptr : src_frame
         };
-        VSFrameRef *dst_frame = vsapi->newVideoFrame2(vsapi->getFrameFormat(src_frame), vsapi->getFrameWidth(src_frame, 0), vsapi->getFrameHeight(src_frame, 0), cp_planes, planes, src_frame, core);
+        VSFrame *dst_frame = vsapi->newVideoFrame2(vsapi->getVideoFrameFormat(src_frame), vsapi->getFrameWidth(src_frame, 0), vsapi->getFrameHeight(src_frame, 0), cp_planes, planes, src_frame, core);
 
-        if (d->vi->format->sampleType == stInteger && d->vi->format->bytesPerSample == 1)
+        if (d->vi.format.sampleType == stInteger && d->vi.format.bytesPerSample == 1)
         {
             // uint8_t
-            for (int plane = 0; plane < d->vi->format->numPlanes; ++plane)
+            for (int plane = 0; plane < d->vi.format.numPlanes; ++plane)
             {
                 const uint8_t *srca = reinterpret_cast<const uint8_t *>(vsapi->getReadPtr(src_frame, plane));
                 const uint8_t *src0 = reinterpret_cast<const uint8_t *>(vsapi->getReadPtr(rep0_frame, plane));
@@ -492,10 +487,10 @@ static const VSFrameRef *VS_CC spRepairGetFrame(int n, int activationReason, voi
                 }
             }
         }
-        else if (d->vi->format->sampleType == stInteger && d->vi->format->bytesPerSample == 2)
+        else if (d->vi.format.sampleType == stInteger && d->vi.format.bytesPerSample == 2)
         {
             // uint16_t
-            for (int plane = 0; plane < d->vi->format->numPlanes; ++plane)
+            for (int plane = 0; plane < d->vi.format.numPlanes; ++plane)
             {
                 const uint16_t *srca = reinterpret_cast<const uint16_t *>(vsapi->getReadPtr(src_frame, plane));
                 const uint16_t *src0 = reinterpret_cast<const uint16_t *>(vsapi->getReadPtr(rep0_frame, plane));
@@ -523,10 +518,10 @@ static const VSFrameRef *VS_CC spRepairGetFrame(int n, int activationReason, voi
                 }
             }
         }
-        else if (d->vi->format->sampleType == stFloat && d->vi->format->bytesPerSample == 4)
+        else if (d->vi.format.sampleType == stFloat && d->vi.format.bytesPerSample == 4)
         {
             // float
-            for (int plane = 0; plane < d->vi->format->numPlanes; ++plane)
+            for (int plane = 0; plane < d->vi.format.numPlanes; ++plane)
             {
                 const float *srca = reinterpret_cast<const float *>(vsapi->getReadPtr(src_frame, plane));
                 const float *src0 = reinterpret_cast<const float *>(vsapi->getReadPtr(rep0_frame, plane));
@@ -556,7 +551,7 @@ static const VSFrameRef *VS_CC spRepairGetFrame(int n, int activationReason, voi
         }
         else
         {
-            vsapi->setFilterError("spRepair: Input format is not supported.", frameCtx);
+            vsapi->setFilterError("spRepair: Input format is not supported->", frameCtx);
             vsapi->freeFrame(dst_frame);
             dst_frame = nullptr;
         }
@@ -589,15 +584,15 @@ static void VS_CC spRepairFree(void *instanceData, VSCore *core, const VSAPI *vs
 }
 
 
-inline VSNodeRef *invokeBilinear(VSPlugin *resize_plugin, VSNodeRef *clip, double src_left, double src_top, const VSAPI *vsapi)
+inline VSNode *invokeBilinear(VSPlugin *resize_plugin, VSNode *clip, double src_left, double src_top, const VSAPI *vsapi)
 {
     VSMap *args = vsapi->createMap();
-    vsapi->propSetNode(args, "clip", clip, paAppend);
-    vsapi->propSetFloat(args, "src_left", src_left, paAppend);
-    vsapi->propSetFloat(args, "src_top", src_top, paAppend);
+    vsapi->mapSetNode(args, "clip", clip, maAppend);
+    vsapi->mapSetFloat(args, "src_left", src_left, maAppend);
+    vsapi->mapSetFloat(args, "src_top", src_top, maAppend);
     VSMap *res = vsapi->invoke(resize_plugin, "Bilinear", args);
     vsapi->freeMap(args);
-    VSNodeRef *res_node = vsapi->propGetNode(res, "clip", 0, nullptr);
+    VSNode *res_node = vsapi->mapGetNode(res, "clip", 0, nullptr);
     vsapi->freeMap(res);
     return res_node;
 }
@@ -605,28 +600,29 @@ inline VSNodeRef *invokeBilinear(VSPlugin *resize_plugin, VSNodeRef *clip, doubl
 
 void VS_CC spRepairCreate(const VSMap *in, VSMap *out, void *userData, VSCore *core, const VSAPI *vsapi)
 {
-    spRepairData d;
+    std::unique_ptr<spRepairData> d(new spRepairData());
 
-    d.node = vsapi->propGetNode(in, "clip", 0, nullptr);
-    d.vi = vsapi->getVideoInfo(d.node);
+    d->node = vsapi->mapGetNode(in, "clip", 0, nullptr);
+    const VSVideoInfo *vi = vsapi->getVideoInfo(d->node);
+    d->vi = *vi;
 
-    d.repairnode = vsapi->propGetNode(in, "repairclip", 0, nullptr);
+    d->repairnode = vsapi->mapGetNode(in, "repairclip", 0, nullptr);
 
-    if (!isSameFormat(d.vi, vsapi->getVideoInfo(d.repairnode)))
+    if (!vsh::isSameVideoFormat(&vi->format, &vsapi->getVideoInfo(d->repairnode)->format))
     {
-        vsapi->freeNode(d.node);
-        vsapi->freeNode(d.repairnode);
-        vsapi->setError(out, "spRepair: Input clips must have the same format.");
+        vsapi->freeNode(d->node);
+        vsapi->freeNode(d->repairnode);
+        vsapi->mapSetError(out, "spRepair: Input clips must have the same format.");
         return;
     }
 
-    int num_pl = d.vi->format->numPlanes;
-    int m = vsapi->propNumElements(in, "mode");
+    int num_pl = d->vi.format.numPlanes;
+    int m = vsapi->mapNumElements(in, "mode");
     if (num_pl < m)
     {
-        vsapi->freeNode(d.node);
-        vsapi->freeNode(d.repairnode);
-        vsapi->setError(out, "spRepair: Number of modes specified must be equal or fewer than the number of input planes.");
+        vsapi->freeNode(d->node);
+        vsapi->freeNode(d->repairnode);
+        vsapi->mapSetError(out, "spRepair: Number of modes specified must be equal or fewer than the number of input planes.");
         return;
     }
 
@@ -635,43 +631,43 @@ void VS_CC spRepairCreate(const VSMap *in, VSMap *out, void *userData, VSCore *c
     {
         if (i < m)
         {
-            d.mode[i] = int64ToIntS(vsapi->propGetInt(in, "mode", i, nullptr));
-            if (d.mode[i] < 0 || d.mode[i] > 24)
+            d->mode[i] = vsh::int64ToIntS(vsapi->mapGetInt(in, "mode", i, nullptr));
+            if (d->mode[i] < 0 || d->mode[i] > 24)
             {
-                vsapi->freeNode(d.node);
-                vsapi->freeNode(d.repairnode);
-                vsapi->setError(out, "spRepair: Invalid mode specified, only 0-24 supported.");
+                vsapi->freeNode(d->node);
+                vsapi->freeNode(d->repairnode);
+                vsapi->mapSetError(out, "spRepair: Invalid mode specified, only 0-24 supported->");
                 return;
             }
-            else if ((d.mode[i] >= 5 && d.mode[i] <= 10) || (d.mode[i] >= 15))
+            else if ((d->mode[i] >= 5 && d->mode[i] <= 10) || (d->mode[i] >= 15))
             {
-                vsapi->freeNode(d.node);
-                vsapi->freeNode(d.repairnode);
-                vsapi->setError(out, "spRepair: This mode is not yet implemented.");
+                vsapi->freeNode(d->node);
+                vsapi->freeNode(d->repairnode);
+                vsapi->mapSetError(out, "spRepair: This mode is not yet implemented->");
                 return;
             }
-            if (d.mode[i] != 0)
+            if (d->mode[i] != 0)
             {
                 all_modes_are_zero = false;
             }
         }
         else
         {
-            d.mode[i] = d.mode[i - 1];
+            d->mode[i] = d->mode[i - 1];
         }
     }
 
     if (all_modes_are_zero)
     {
         // Return without processing
-        vsapi->propSetNode(out, "clip", d.node, paReplace);
-        vsapi->freeNode(d.node);
-        vsapi->freeNode(d.repairnode);
+        vsapi->mapSetNode(out, "clip", d->node, maReplace);
+        vsapi->freeNode(d->node);
+        vsapi->freeNode(d->repairnode);
         return;
     }
 
     int err;
-    double pixel = vsapi->propGetFloat(in, "pixel", 0, &err);
+    double pixel = vsapi->mapGetFloat(in, "pixel", 0, &err);
     if (err)
     {
         pixel = 1.0;
@@ -682,44 +678,56 @@ void VS_CC spRepairCreate(const VSMap *in, VSMap *out, void *userData, VSCore *c
     }
     if (pixel > 20.0)
     {
-        vsapi->freeNode(d.node);
-        vsapi->freeNode(d.repairnode);
-        vsapi->setError(out, "spRepair: The pixel value is considered to be too large.");
+        vsapi->freeNode(d->node);
+        vsapi->freeNode(d->repairnode);
+        vsapi->mapSetError(out, "spRepair: The pixel value is considered to be too large.");
         return;
     }
 
     // Invoke core.resize.Bilinear to generate ...
-    VSPlugin *resize_plugin = vsapi->getPluginById("com.vapoursynth.resize", core);
+    VSPlugin *resize_plugin = vsapi->getPluginByID("com.vapoursynth.resize", core);
     // 1, top-left
-    d.bil_nodes[0] = invokeBilinear(resize_plugin, d.repairnode, pixel, pixel, vsapi);
+    d->bil_nodes[0] = invokeBilinear(resize_plugin, d->repairnode, pixel, pixel, vsapi);
     // 2, top
-    d.bil_nodes[1] = invokeBilinear(resize_plugin, d.repairnode, 0, pixel, vsapi);
+    d->bil_nodes[1] = invokeBilinear(resize_plugin, d->repairnode, 0, pixel, vsapi);
     // 3, top-right
-    d.bil_nodes[2] = invokeBilinear(resize_plugin, d.repairnode, -pixel, pixel, vsapi);
+    d->bil_nodes[2] = invokeBilinear(resize_plugin, d->repairnode, -pixel, pixel, vsapi);
     // 4, left
-    d.bil_nodes[3] = invokeBilinear(resize_plugin, d.repairnode, pixel, 0, vsapi);
+    d->bil_nodes[3] = invokeBilinear(resize_plugin, d->repairnode, pixel, 0, vsapi);
     // 6, right
-    d.bil_nodes[4] = invokeBilinear(resize_plugin, d.repairnode, -pixel, 0, vsapi);
+    d->bil_nodes[4] = invokeBilinear(resize_plugin, d->repairnode, -pixel, 0, vsapi);
     // 7, bottom-left
-    d.bil_nodes[5] = invokeBilinear(resize_plugin, d.repairnode, pixel, -pixel, vsapi);
+    d->bil_nodes[5] = invokeBilinear(resize_plugin, d->repairnode, pixel, -pixel, vsapi);
     // 8, bottom
-    d.bil_nodes[6] = invokeBilinear(resize_plugin, d.repairnode, 0, -pixel, vsapi);
+    d->bil_nodes[6] = invokeBilinear(resize_plugin, d->repairnode, 0, -pixel, vsapi);
     // 9, bottom-right
-    d.bil_nodes[7] = invokeBilinear(resize_plugin, d.repairnode, -pixel, -pixel, vsapi);
+    d->bil_nodes[7] = invokeBilinear(resize_plugin, d->repairnode, -pixel, -pixel, vsapi);
 
-    spRepairData *data = new spRepairData(d);
+    std::vector<VSFilterDependency> dep_req =
+    {
+        {d->node, rpStrictSpatial},
+        {d->repairnode, rpStrictSpatial}
+    };
+    for (int n = 0; n < 8; ++n)
+    {
+        dep_req.push_back({d->bil_nodes[n], rpStrictSpatial});
+    }
 
-    vsapi->createFilter(in, out, "spRepair", spRepairInit, spRepairGetFrame, spRepairFree, fmParallel, 0, data, core);
+    vsapi->createVideoFilter(out, "spRepair", &d->vi, spRepairGetFrame, spRepairFree, fmParallel, dep_req.data(), dep_req.size(), d.get(), core);\
+    d.release();
 }
 
-VS_EXTERNAL_API(void) VapourSynthPluginInit(VSConfigPlugin configFunc, VSRegisterFunction registerFunc, VSPlugin *plugin)
-{
-    configFunc("yomiko.collection.sprepair", "sprep", "Sub-pixel repair", VAPOURSYNTH_API_VERSION, 1, plugin);
 
-    registerFunc("spRepair",
-        "clip:clip;"
-        "repairclip:clip;"
+VS_EXTERNAL_API(void) VapourSynthPluginInit2(VSPlugin* plugin, const VSPLUGINAPI* vspapi)
+{
+    vspapi->configPlugin("yomiko.collection.sprepair", "sprep", "Sub-pixel repair", VS_MAKE_VERSION(1, 0), VAPOURSYNTH_API_VERSION, 0, plugin);
+
+    vspapi->registerFunction("spRepair",
+        "clip:vnode;"
+        "repairclip:vnode;"
         "mode:int[];"
-        "pixel:float",
-        spRepairCreate, nullptr, plugin);
+        "pixel:float;",
+        "clip:vnode;",
+        spRepairCreate, nullptr, plugin
+    );
 }
