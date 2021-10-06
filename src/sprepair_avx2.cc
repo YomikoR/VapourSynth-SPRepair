@@ -13,8 +13,16 @@
  * Journal of Machine Learning Research 14 (2013) 303-331.
  */
 
+#if defined(_MSC_VER)
+  #define ALWAYS_INLINE __forceinline
+#elif defined(__GNUC__)
+  #define ALWAYS_INLINE __attribute__((always_inline))
+#else
+  #define ALWAYS_INLINE
+#endif
+
 template <int i, int j>
-inline void swap_u8(__m256i *val)
+inline void ALWAYS_INLINE swap_u8(__m256i *val)
 {
     __m256i tmp = _mm256_min_epu8(val[i], val[j]);
     val[j] = _mm256_max_epu8(val[i], val[j]);
@@ -23,7 +31,7 @@ inline void swap_u8(__m256i *val)
 
 
 template <int i, int j>
-inline void swap_u16(__m256i *val)
+inline void ALWAYS_INLINE swap_u16(__m256i *val)
 {
     __m256i tmp = _mm256_min_epu16(val[i], val[j]);
     val[j] = _mm256_max_epu16(val[i], val[j]);
@@ -32,7 +40,7 @@ inline void swap_u16(__m256i *val)
 
 
 template <int i, int j>
-inline void swap_f(__m256 *val)
+inline void ALWAYS_INLINE swap_f(__m256 *val)
 {
     __m256 tmp = _mm256_min_ps(val[i], val[j]);
     val[j] = _mm256_max_ps(val[i], val[j]);
@@ -40,37 +48,37 @@ inline void swap_f(__m256 *val)
 }
 
 
-inline __m256i loadu(const uint8_t *src)
+inline __m256i ALWAYS_INLINE loadu(const uint8_t *src)
 {
     return _mm256_loadu_si256(reinterpret_cast<const __m256i *>(src));
 }
 
 
-inline __m256i loadu(const uint16_t *src)
+inline __m256i ALWAYS_INLINE loadu(const uint16_t *src)
 {
     return _mm256_loadu_si256(reinterpret_cast<const __m256i *>(src));
 }
 
 
-inline __m256 loadu(const float *src)
+inline __m256 ALWAYS_INLINE loadu(const float *src)
 {
     return _mm256_loadu_ps(src);
 }
 
 
-inline void storeu(uint8_t *dst, __m256i value)
+inline void ALWAYS_INLINE storeu(uint8_t *dst, __m256i value)
 {
     _mm256_storeu_si256(reinterpret_cast<__m256i *>(dst), value);
 }
 
 
-inline void storeu(uint16_t *dst, __m256i value)
+inline void ALWAYS_INLINE storeu(uint16_t *dst, __m256i value)
 {
     _mm256_storeu_si256(reinterpret_cast<__m256i *>(dst), value);
 }
 
 
-inline void storeu(float *dst, __m256 value)
+inline void ALWAYS_INLINE storeu(float *dst, __m256 value)
 {
     _mm256_storeu_ps(dst, value);
 }
@@ -83,7 +91,7 @@ inline void storeu(float *dst, __m256 value)
 
 
 template <int order>
-inline std::pair<__m256i, __m256i> sort9_minmax_u8(const uint8_t *src0,
+std::pair<__m256i, __m256i> sort9_minmax_u8(const uint8_t *src0,
     const uint8_t *src1, const uint8_t *src2, const uint8_t *src3,
     const uint8_t *src4, const uint8_t *src5, const uint8_t *src6,
     const uint8_t *src7, const uint8_t *src8)
@@ -114,7 +122,7 @@ DO_LOADU
 
 
 template<int order>
-inline std::pair<__m256i, __m256i> sort9_minmax_u16(const uint16_t *src0,
+std::pair<__m256i, __m256i> sort9_minmax_u16(const uint16_t *src0,
     const uint16_t *src1, const uint16_t *src2, const uint16_t *src3,
     const uint16_t *src4, const uint16_t *src5, const uint16_t *src6,
     const uint16_t *src7, const uint16_t *src8)
@@ -145,7 +153,7 @@ DO_LOADU
 
 
 template <int order>
-inline std::pair<__m256, __m256> sort9_minmax_f(const float *src0,
+std::pair<__m256, __m256> sort9_minmax_f(const float *src0,
     const float *src1, const float *src2, const float *src3,
     const float *src4, const float *src5, const float *src6,
     const float *src7, const float *src8)
@@ -175,7 +183,7 @@ DO_LOADU
 }
 
 
-inline __m256i set_minmax_u8(__m256i vmin, __m256i vmax, __m256i va)
+inline __m256i ALWAYS_INLINE set_minmax_u8(__m256i vmin, __m256i vmax, __m256i va)
 {
     va = _mm256_min_epu8(va, vmax);
     va = _mm256_max_epu8(va, vmin);
@@ -183,7 +191,7 @@ inline __m256i set_minmax_u8(__m256i vmin, __m256i vmax, __m256i va)
 }
 
 
-inline __m256i set_minmax_u8(__m256i vmin, __m256i vmax, __m256i va, __m256i v4)
+inline __m256i ALWAYS_INLINE set_minmax_u8(__m256i vmin, __m256i vmax, __m256i va, __m256i v4)
 {
     vmin = _mm256_min_epu8(vmin, v4);
     vmax = _mm256_max_epu8(vmax, v4);
@@ -193,7 +201,7 @@ inline __m256i set_minmax_u8(__m256i vmin, __m256i vmax, __m256i va, __m256i v4)
 }
 
 
-inline __m256i set_minmax_u16(__m256i vmin, __m256i vmax, __m256i va)
+inline __m256i ALWAYS_INLINE set_minmax_u16(__m256i vmin, __m256i vmax, __m256i va)
 {
     va = _mm256_min_epu16(va, vmax);
     va = _mm256_max_epu16(va, vmin);
@@ -201,7 +209,7 @@ inline __m256i set_minmax_u16(__m256i vmin, __m256i vmax, __m256i va)
 }
 
 
-inline __m256i set_minmax_u16(__m256i vmin, __m256i vmax, __m256i va, __m256i v4)
+inline __m256i ALWAYS_INLINE set_minmax_u16(__m256i vmin, __m256i vmax, __m256i va, __m256i v4)
 {
     vmin = _mm256_min_epu16(vmin, v4);
     vmax = _mm256_max_epu16(vmax, v4);
@@ -211,7 +219,7 @@ inline __m256i set_minmax_u16(__m256i vmin, __m256i vmax, __m256i va, __m256i v4
 }
 
 
-inline __m256 set_minmax_f(__m256 vmin, __m256 vmax, __m256 va)
+inline __m256 ALWAYS_INLINE set_minmax_f(__m256 vmin, __m256 vmax, __m256 va)
 {
     va = _mm256_min_ps(va, vmax);
     va = _mm256_max_ps(va, vmin);
@@ -219,7 +227,7 @@ inline __m256 set_minmax_f(__m256 vmin, __m256 vmax, __m256 va)
 }
 
 
-inline __m256 set_minmax_f(__m256 vmin, __m256 vmax, __m256 va, __m256 v4)
+inline __m256 ALWAYS_INLINE set_minmax_f(__m256 vmin, __m256 vmax, __m256 va, __m256 v4)
 {
     vmin = _mm256_min_ps(vmin, v4);
     vmax = _mm256_max_ps(vmax, v4);
